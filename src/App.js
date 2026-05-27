@@ -98,9 +98,10 @@ export default function PilatesPro() {
             onSave={async()=>{ await fetchRecords(profile); setShowNewRecord(false); }}
             onCancel={()=>setShowNewRecord(false)}/>
         )}
-        {page==="members" && profile?.role!=="member" && <MembersPage members={members} records={records} setPage={setPage} setFilterMember={setFilterMember}/>}
-        {page==="tickets" && <TicketsPage profile={profile} members={members}/>}
+        {page==="members" && profile?.role!=="member" && <MembersPage members={members} records={records} setPage={setPage} setFilterMember={setFilterMember} onRefresh={fetchMembers}/>}
+        {page==="tickets" && <TicketsPage profile={profile} members={members} onRefresh={fetchMembers}/>}
         {page==="calendar" && <CalendarPage profile={profile} records={records} calMonth={calMonth} setCalMonth={setCalMonth} setSelectedRecord={setSelectedRecord} setPage={setPage}/>}
+        {page==="addmember" && profile?.role==="admin" && <AddMemberPage onSave={async()=>{ await fetchMembers(); setPage("members"); }} onCancel={()=>setPage("members")}/>}
       </div>
     </div>
   );
@@ -131,9 +132,9 @@ function LoginPage(){
       </div>
       <div style={{background:"#fff",borderRadius:16,padding:32,width:"100%",maxWidth:380,boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
         <div style={{fontSize:11,color:"#9c8a7a",marginBottom:6}}>전화번호 (010 제외 8자리)</div>
-        <input type="text" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="예: 12345678" style={{marginBottom:14,width:"100%"}}/>
+        <input type="text" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="예: 12345678" style={{marginBottom:14,width:"100%",border:"1px solid #e0d9d0",borderRadius:8,padding:"9px 12px",fontSize:14,outline:"none"}}/>
         <div style={{fontSize:11,color:"#9c8a7a",marginBottom:6}}>비밀번호</div>
-        <input type="password" value={pass} onChange={e=>setPass(e.target.value)} placeholder="비밀번호" style={{marginBottom:20,width:"100%"}} onKeyDown={e=>e.key==="Enter"&&login()}/>
+        <input type="password" value={pass} onChange={e=>setPass(e.target.value)} placeholder="비밀번호" style={{marginBottom:20,width:"100%",border:"1px solid #e0d9d0",borderRadius:8,padding:"9px 12px",fontSize:14,outline:"none"}} onKeyDown={e=>e.key==="Enter"&&login()}/>
         {error&&<div style={{color:"#e74c3c",fontSize:13,marginBottom:12,textAlign:"center"}}>{error}</div>}
         <button style={{width:"100%",padding:14,fontSize:15,background:"#3d3028",color:"#fff",border:"none",borderRadius:8,cursor:"pointer"}} onClick={login} disabled={loading}>
           {loading?"로그인 중...":"로그인"}
@@ -297,7 +298,95 @@ function AdminDashboard({records, members, setPage, setFilterMember}){
             </div>
           );
         })}
-        {members.length===0&&<div style={{color:"#b8a898",fontSize:14}}>등록된 회원이 없어요</div>}
+        {members.length===0&&<div style={{color:"#b8a898",fontSize:14,textAlign:"center",padding:20}}>
+          등록된 회원이 없어요<br/>
+          <button onClick={()=>setPage("addmember")} style={{marginTop:12,padding:"8px 16px",background:"#3d3028",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13}}>+ 회원 추가</button>
+        </div>}
+      </div>
+    </div>
+  );
+}
+
+function AddMemberPage({onSave, onCancel}){
+  const [form, setForm] = useState({name:"", phone:"", role:"member", ticket_total:10, ticket_left:10});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save(){
+    if(!form.name||!form.phone){setError("이름과 전화번호를 입력해주세요.");return;}
+    setSaving(true); setError("");
+    const email = `${form.phone}@deepropilates.com`;
+    const password = form.phone.slice(-4);
+    
+    const {data, error:authError} = await supabase.auth.admin.createUser({
+      email, password, email_confirm: true
+    });
+
+    if(authError){
+      const {data:signupData, error:signupError} = await supabase.auth.signUp({email, password});
+      if(signupError){setError("계정 생성 실패: "+signupError.message);setSaving(false);return;}
+      if(signupData?.user){
+        await supabase.from('profiles').insert({
+          id: signupData.user.id,
+          name: form.name,
+          phone: form.phone,
+          role: form.role,
+          ticket_total: form.ticket_total,
+          ticket_left: form.ticket_left,
+        });
+      }
+    } else if(data?.user){
+      await supabase.from('profiles').insert({
+        id: data.user.id,
+        name: form.name,
+        phone: form.phone,
+        role: form.role,
+        ticket_total: form.ticket_total,
+        ticket_left: form.ticket_left,
+      });
+    }
+    setSaving(false);
+    onSave();
+  }
+
+  return(
+    <div className="fade-in">
+      <button onClick={onCancel} style={{marginBottom:20,fontSize:13,background:"transparent",border:"1px solid #d4ccc4",borderRadius:8,padding:"9px 18px",cursor:"pointer",color:"#6b5f57"}}>← 취소</button>
+      <div style={{fontSize:20,fontWeight:500,marginBottom:20}}>회원 추가</div>
+      <div style={{background:"#fff",border:"1px solid #e8e2da",borderRadius:12,padding:24}}>
+        {[
+          {key:"name",label:"이름",ph:"홍길동",type:"text"},
+          {key:"phone",label:"전화번호 (010 제외)",ph:"12345678",type:"text"},
+        ].map(f=>(
+          <div key={f.key} style={{marginBottom:16}}>
+            <div style={{fontSize:11,color:"#9c8a7a",marginBottom:6}}>{f.label}</div>
+            <input type={f.type} placeholder={f.ph} value={form[f.key]} onChange={e=>setForm({...form,[f.key]:e.target.value})} style={{width:"100%",border:"1px solid #e0d9d0",borderRadius:8,padding:"9px 12px",fontSize:14,outline:"none"}}/>
+          </div>
+        ))}
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:11,color:"#9c8a7a",marginBottom:6}}>역할</div>
+          <select value={form.role} onChange={e=>setForm({...form,role:e.target.value})} style={{width:"100%",border:"1px solid #e0d9d0",borderRadius:8,padding:"9px 12px",fontSize:14,outline:"none"}}>
+            <option value="member">회원</option>
+            <option value="instructor">강사</option>
+          </select>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+          <div>
+            <div style={{fontSize:11,color:"#9c8a7a",marginBottom:6}}>수강권 총 횟수</div>
+            <input type="number" value={form.ticket_total} onChange={e=>setForm({...form,ticket_total:parseInt(e.target.value),ticket_left:parseInt(e.target.value)})} style={{width:"100%",border:"1px solid #e0d9d0",borderRadius:8,padding:"9px 12px",fontSize:14,outline:"none"}}/>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:"#9c8a7a",marginBottom:6}}>잔여 횟수</div>
+            <input type="number" value={form.ticket_left} onChange={e=>setForm({...form,ticket_left:parseInt(e.target.value)})} style={{width:"100%",border:"1px solid #e0d9d0",borderRadius:8,padding:"9px 12px",fontSize:14,outline:"none"}}/>
+          </div>
+        </div>
+        <div style={{background:"#f7f5f2",borderRadius:8,padding:12,marginBottom:16,fontSize:13,color:"#6b5f57"}}>
+          💡 초기 비밀번호는 전화번호 뒷 4자리예요
+        </div>
+        {error&&<div style={{color:"#e74c3c",fontSize:13,marginBottom:12}}>{error}</div>}
+        <button onClick={save} disabled={saving} style={{width:"100%",padding:14,background:"#3d3028",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:15}}>
+          {saving?"추가 중...":"회원 추가"}
+        </button>
       </div>
     </div>
   );
@@ -376,7 +465,7 @@ function RecordDetail({profile, record, onBack, onRefresh}){
           </div>
         ))}
         <div style={{display:"flex",gap:8,marginTop:12}}>
-          <input type="text" value={comment} onChange={e=>setComment(e.target.value)} placeholder="댓글 입력..." style={{flex:1,border:"1px solid #e0d9d0",borderRadius:8,padding:"9px 12px",fontSize:14,background:"#faf9f7",outline:"none"}} onKeyDown={e=>e.key==="Enter"&&addComment()}/>
+          <input type="text" value={comment} onChange={e=>setComment(e.target.value)} placeholder="댓글 입력..." style={{flex:1,border:"1px solid #e0d9d0",borderRadius:8,padding:"9px 12px",fontSize:14,outline:"none"}} onKeyDown={e=>e.key==="Enter"&&addComment()}/>
           <button onClick={addComment} style={{padding:"9px 18px",background:"#3d3028",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13}}>전송</button>
         </div>
       </div>
@@ -403,11 +492,11 @@ function NewRecordForm({profile, members, onSave, onCancel}){
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
         <div>
           <div style={{fontSize:11,color:"#9c8a7a",marginBottom:6}}>날짜</div>
-          <input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} style={{width:"100%",border:"1px solid #e0d9d0",borderRadius:8,padding:"9px 12px",fontSize:14,background:"#faf9f7",outline:"none"}}/>
+          <input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} style={{width:"100%",border:"1px solid #e0d9d0",borderRadius:8,padding:"9px 12px",fontSize:14,outline:"none"}}/>
         </div>
         <div>
           <div style={{fontSize:11,color:"#9c8a7a",marginBottom:6}}>회원</div>
-          <select value={form.member_id} onChange={e=>setForm({...form,member_id:e.target.value})} style={{width:"100%",border:"1px solid #e0d9d0",borderRadius:8,padding:"9px 12px",fontSize:14,background:"#faf9f7",outline:"none"}}>
+          <select value={form.member_id} onChange={e=>setForm({...form,member_id:e.target.value})} style={{width:"100%",border:"1px solid #e0d9d0",borderRadius:8,padding:"9px 12px",fontSize:14,outline:"none"}}>
             {members.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>
@@ -415,7 +504,7 @@ function NewRecordForm({profile, members, onSave, onCancel}){
       {[{key:"class_record",label:"📋 수업 기록",ph:"오늘 수업 내용..."},{key:"feedback",label:"💡 피드백",ph:"회원에게 전달할 피드백..."},{key:"homework",label:"📝 숙제",ph:"집에서 할 운동..."}].map(f=>(
         <div key={f.key} style={{marginBottom:14}}>
           <div style={{fontSize:11,color:"#9c8a7a",marginBottom:6}}>{f.label}</div>
-          <textarea rows={2} placeholder={f.ph} value={form[f.key]} onChange={e=>setForm({...form,[f.key]:e.target.value})} style={{width:"100%",border:"1px solid #e0d9d0",borderRadius:8,padding:"9px 12px",fontSize:14,background:"#faf9f7",outline:"none",resize:"none"}}/>
+          <textarea rows={2} placeholder={f.ph} value={form[f.key]} onChange={e=>setForm({...form,[f.key]:e.target.value})} style={{width:"100%",border:"1px solid #e0d9d0",borderRadius:8,padding:"9px 12px",fontSize:14,outline:"none",resize:"none"}}/>
         </div>
       ))}
       <div style={{display:"flex",gap:10,marginTop:8}}>
@@ -426,10 +515,13 @@ function NewRecordForm({profile, members, onSave, onCancel}){
   );
 }
 
-function MembersPage({members, records, setPage, setFilterMember}){
+function MembersPage({members, records, setPage, setFilterMember, onRefresh}){
   return(
     <div className="fade-in">
-      <div style={{fontSize:20,fontWeight:500,marginBottom:20}}>회원 관리</div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div style={{fontSize:20,fontWeight:500}}>회원 관리</div>
+        <button onClick={()=>setPage("addmember")} style={{padding:"9px 18px",background:"#3d3028",color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13}}>+ 회원 추가</button>
+      </div>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         {members.map(m=>{
           const mRec=records.filter(r=>r.member_id===m.id);
@@ -461,7 +553,7 @@ function MembersPage({members, records, setPage, setFilterMember}){
   );
 }
 
-function TicketsPage({profile, members}){
+function TicketsPage({profile, members, onRefresh}){
   const list=profile?.role==="member"?[profile]:members;
   return(
     <div className="fade-in">
