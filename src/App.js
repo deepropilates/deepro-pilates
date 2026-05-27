@@ -316,7 +316,7 @@ function AddMemberPage({onSave, onCancel}){
     if(!form.name||!form.phone){setError("이름과 전화번호를 입력해주세요.");return;}
     setSaving(true); setError("");
     const email = `${form.phone}@deepropilates.com`;
-    const password = form.phone.slice(-4);
+    const password = form.phone;
     
     const {data, error:authError} = await supabase.auth.admin.createUser({
       email, password, email_confirm: true
